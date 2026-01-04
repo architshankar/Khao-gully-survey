@@ -1,0 +1,8 @@
+
+{
+  "name": "Khaoo Gully Survey",
+  "description": "A high-energy, responsive survey web app for the Khaoo Gully startup, featuring a neon-green progress goal tracker for community-driven free delivery rewards.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
