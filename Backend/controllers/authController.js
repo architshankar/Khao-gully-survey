@@ -56,7 +56,9 @@ export const handleOAuthCallback = async (req, res) => {
     }
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    console.log('Received session from Supabase callback:', data);
     if (error || !data.session) {
+      console.log('OAuth code exchange failed', error);
       return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}?error=auth_failed`);
     }
 
