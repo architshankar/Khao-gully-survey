@@ -59,9 +59,20 @@ export const getSession = async (req, res, next) => {
 
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    if (error) {
+    if (error || !user) {
       return res.status(200).json({
         status: 'success',
+        data: { user: null, session: null }
+      });
+    }
+
+    // domain restriction
+    const allowedDomains = ['@kiit.ac.in', '@kims.ac.in'];
+    const email = user.email || '';
+    if (!allowedDomains.some(d => email.endsWith(d))) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Unauthorized domain',
         data: { user: null, session: null }
       });
     }

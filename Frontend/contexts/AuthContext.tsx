@@ -26,54 +26,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for hash fragment from Supabase OAuth redirect
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const accessToken = hashParams.get('access_token');
-    const refreshToken = hashParams.get('refresh_token');
+    const initialize = async () => {
+      // Check for hash fragment from Supabase OAuth redirect
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
 
-    if (accessToken) {
-      // Parse user data from hash
-      const tokenParts = accessToken.split('.');
-      if (tokenParts.length === 3) {
+      if (accessToken) {
+        // Validate token with backend before accepting
         try {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          const userData = {
-            id: payload.sub,
-            email: payload.email,
-            user_metadata: payload.user_metadata || {}
-          };
-          
-          // Store session
-          const session = {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            user: userData
-          };
-          
-          localStorage.setItem('auth_session', JSON.stringify(session));
-          setUser(userData);
-          
-          // Clean up URL
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (error) {
-          console.error('Error parsing token:', error);
+          const res = await fetch(`${API_BASE_URL}/auth/session`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          const result = await res.json();
+          if (res.ok && result.status === 'success' && result.data.user) {
+            const userData = result.data.user;
+            const session = { access_token: accessToken, refresh_token: refreshToken, user: userData };
+            localStorage.setItem('auth_session', JSON.stringify(session));
+            setUser(userData);
+          } else {
+            alert('Account not permitted. Use KIIT/KIMS email only.');
+          }
+        } catch (err) {
+          console.error('Validation error:', err);
         }
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-    } else {
-      // Check localStorage for existing session
+
+      // Check localStorage for existing session and revalidate
       const storedSession = localStorage.getItem('auth_session');
       if (storedSession) {
         try {
           const session = JSON.parse(storedSession);
-          setUser(session.user);
+          const token = session.access_token;
+          const res = await fetch(`${API_BASE_URL}/auth/session`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const result = await res.json();
+          if (res.ok && result.status === 'success' && result.data.user) {
+            setUser(result.data.user);
+          } else {
+            localStorage.removeItem('auth_session');
+          }
         } catch (error) {
-          console.error('Error parsing stored session:', error);
+          console.error('Error validating stored session:', error);
           localStorage.removeItem('auth_session');
         }
       }
       setLoading(false);
-    }
+    };
+
+    initialize();
   }, []);
 
   const signInWithGoogle = async () => {
