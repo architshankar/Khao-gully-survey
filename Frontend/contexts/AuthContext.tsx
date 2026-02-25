@@ -35,11 +35,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (storedSession) {
         try {
           const session = JSON.parse(storedSession);
+          console.log('✅ Stored session found, user:', session.user?.email);
           setUser(session.user);
         } catch (error) {
-          console.error('Error parsing session:', error);
+          console.error('❌ Error parsing stored session:', error);
           localStorage.removeItem('auth_session');
         }
+      } else {
+        console.log('ℹ️ No stored session found');
       }
       setLoading(false);
     };
@@ -48,50 +51,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const params = new URLSearchParams(window.location.search);
     const sessionParam = params.get('session');
     const errorParam = params.get('error');
+    const errorDetails = params.get('details');
+
+    console.log('🔍 URL Check:', { 
+      hasSessionParam: !!sessionParam, 
+      hasErrorParam: !!errorParam,
+      error: errorParam,
+      details: errorDetails
+    });
 
     if (sessionParam || errorParam) {
+      console.log('🧹 Cleaning up URL');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     if (errorParam) {
-      console.error('OAuth error:', errorParam);
-      const msg = errorParam === 'unauthorized_domain'
-        ? 'Only KIIT/KIMS email addresses may sign in.'
-        : `Authentication failed: ${errorParam}`;
+      console.error('❌ OAuth error from callback:', errorParam, errorDetails);
+      let msg = `Authentication failed: ${errorParam}`;
+      if (errorParam === 'unauthorized_domain') {
+        msg = 'Only KIIT/KIMS email addresses may sign in.';
+      } else if (errorParam === 'no_code') {
+        msg = 'OAuth code not received from Google. Please try again.';
+      } else if (errorParam === 'no_session') {
+        msg = 'Session not created. Please try again.';
+      }
+      if (errorDetails) {
+        msg += ` (${errorDetails})`;
+      }
       alert(msg);
       setLoading(false);
     } else if (sessionParam) {
+      console.log('📦 Processing session from URL...');
       try {
         const session = JSON.parse(decodeURIComponent(sessionParam));
+        console.log('✅ Session parsed successfully, user:', session.user?.email);
         localStorage.setItem('auth_session', JSON.stringify(session));
         setUser(session.user);
       } catch (error) {
-        console.error('Error processing session:', error);
+        console.error('❌ Error parsing session from URL:', error);
+        alert('Failed to parse authentication session. Please try again.');
       }
       setLoading(false);
     } else {
+      console.log('📂 Checking stored session...');
       checkSession();
     }
   }, []);
 
   const signInWithGoogle = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/google`);
+      console.log('🔐 Frontend: Initiating Google sign-in...');
+      console.log('📡 API URL:', `${API_BASE_URL}/auth/oauth/google`);
+      const response = await fetch(`${API_BASE_URL}/auth/oauth/google`);
+      
+      console.log('📬 Response status:', response.status, response.statusText);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to initiate Google sign-in:', response.status, errorText);
         throw new Error('Failed to initiate Google sign-in');
       }
       
       const data = await response.json();
+      console.log('📦 OAuth response:', { status: data.status, hasUrl: !!data.data?.url });
       
       if (data.status === 'success' && data.data.url) {
+        console.log('✅ OAuth URL received, redirecting to Google...');
         // Redirect to Google OAuth
         window.location.href = data.data.url;
       } else {
+        console.error('❌ No OAuth URL received');
         throw new Error('No OAuth URL received');
       }
     } catch (error) {
-      console.error('Google sign-in error:', error);
+      console.error('❌ Google sign-in error:', error);
       throw error;
     }
   };
