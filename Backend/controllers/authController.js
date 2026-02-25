@@ -14,10 +14,12 @@ export const initiateOAuth = async (req, res, next) => {
       });
     }
 
+    const redirectUrl = `${req.protocol}://${req.get('host')}/api/auth/callback`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}`,
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true
       },
     });
 
@@ -44,6 +46,39 @@ export const initiateOAuth = async (req, res, next) => {
 
 
 /**
+ * Handle OAuth callback
+ */
+export const handleOAuthCallback = async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}?error=no_code`);
+    }
+
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error || !data.session) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}?error=auth_failed`);
+    }
+
+    // domain restriction on returned user
+    const user = data.session.user;
+    const allowed = ['@kiit.ac.in', '@kims.ac.in'];
+    const email = (user.email || '').toLowerCase();
+    if (!allowed.some(d => email.endsWith(d))) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}?error=unauthorized_domain`);
+    }
+
+    // send session to frontend
+    res.redirect(
+      `${process.env.FRONTEND_URL || 'http://localhost:3000'}?session=${encodeURIComponent(JSON.stringify(data.session))}`
+    );
+  } catch (err) {
+    console.error('callback error', err);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}?error=callback_failed`);
+  }
+};
+
+/**
  * Get current session
  */
 export const getSession = async (req, res, next) => {
@@ -68,8 +103,10 @@ export const getSession = async (req, res, next) => {
 
     // domain restriction
     const allowedDomains = ['@kiit.ac.in', '@kims.ac.in'];
-    const email = user.email || '';
+    const email = (user.email || '').toLowerCase();
+    console.log('Domain check for', email);
     if (!allowedDomains.some(d => email.endsWith(d))) {
+      console.log('Domain restriction failed for', email);
       return res.status(403).json({
         status: 'error',
         message: 'Unauthorized domain',

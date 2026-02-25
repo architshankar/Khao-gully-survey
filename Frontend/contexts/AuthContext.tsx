@@ -26,59 +26,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initialize = async () => {
-      // Check for hash fragment from Supabase OAuth redirect
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
-
-      if (accessToken) {
-        // Validate token with backend before accepting
-        try {
-          const res = await fetch(`${API_BASE_URL}/auth/session`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-          });
-          const result = await res.json();
-          if (res.ok && result.status === 'success' && result.data.user) {
-            const userData = result.data.user;
-            const session = { access_token: accessToken, refresh_token: refreshToken, user: userData };
-            localStorage.setItem('auth_session', JSON.stringify(session));
-            setUser(userData);
-          } else {
-            alert('Account not permitted. Use KIIT/KIMS email only.');
-          }
-        } catch (err) {
-          console.error('Validation error:', err);
-        }
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setLoading(false);
-        return;
-      }
-
-      // Check localStorage for existing session and revalidate
+    const checkSession = async () => {
       const storedSession = localStorage.getItem('auth_session');
       if (storedSession) {
         try {
           const session = JSON.parse(storedSession);
-          const token = session.access_token;
-          const res = await fetch(`${API_BASE_URL}/auth/session`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const result = await res.json();
-          if (res.ok && result.status === 'success' && result.data.user) {
-            setUser(result.data.user);
-          } else {
-            localStorage.removeItem('auth_session');
-          }
+          setUser(session.user);
         } catch (error) {
-          console.error('Error validating stored session:', error);
+          console.error('Error parsing session:', error);
           localStorage.removeItem('auth_session');
         }
       }
       setLoading(false);
     };
 
-    initialize();
+    // look for session or error in query string
+    const params = new URLSearchParams(window.location.search);
+    const sessionParam = params.get('session');
+    const errorParam = params.get('error');
+
+    if (sessionParam || errorParam) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (errorParam) {
+      console.error('OAuth error:', errorParam);
+      const msg = errorParam === 'unauthorized_domain'
+        ? 'Only KIIT/KIMS email addresses may sign in.'
+        : `Authentication failed: ${errorParam}`;
+      alert(msg);
+      setLoading(false);
+    } else if (sessionParam) {
+      try {
+        const session = JSON.parse(decodeURIComponent(sessionParam));
+        localStorage.setItem('auth_session', JSON.stringify(session));
+        setUser(session.user);
+      } catch (error) {
+        console.error('Error processing session:', error);
+      }
+      setLoading(false);
+    } else {
+      checkSession();
+    }
   }, []);
 
   const signInWithGoogle = async () => {

@@ -1,7 +1,14 @@
 import express from 'express';
-import { initiateOAuth, getSession, logout } from '../controllers/authController.js';
+import { initiateOAuth, handleOAuthCallback, getSession, logout } from '../controllers/authController.js';
 
 const router = express.Router();
+
+/**
+ * @route   GET /api/auth/callback
+ * @desc    Handle OAuth provider callback
+ * @access  Public
+ */
+router.get('/callback', handleOAuthCallback);
 
 /**
  * @route   GET /api/auth/:provider
