@@ -178,12 +178,6 @@ const App: React.FC = () => {
                 >
                   Back to Hub
                 </button>
-                <button 
-                  onClick={handleReset}
-                  className="text-black/30 text-[10px] font-black uppercase tracking-widest hover:text-black transition-colors pt-2"
-                >
-                  Add another response?
-                </button>
               </div>
             </div>
           </div>
