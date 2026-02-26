@@ -15,58 +15,75 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;       // <-- new: holds domain rejection message
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const ALLOWED_DOMAIN = 'kiit.ac.in';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);   // <-- new
 
   useEffect(() => {
-    // Check for hash fragment from Supabase OAuth redirect
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const hashParams  = new URLSearchParams(window.location.hash.substring(1));
     const accessToken = hashParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token');
 
+    // Always clean up the URL first so tokens don't linger
     if (accessToken) {
-      // Parse user data from hash
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (accessToken) {
       const tokenParts = accessToken.split('.');
       if (tokenParts.length === 3) {
         try {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          const userData = {
+          const payload  = JSON.parse(atob(tokenParts[1]));
+          const email: string = payload.email ?? '';
+
+          // ---- THE JUGAAD ----
+          if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+            // Reject — don't store anything, show error
+            setAuthError(
+              `Only @${ALLOWED_DOMAIN} accounts are allowed. You signed in with ${email || 'an unknown email'}.`
+            );
+            setLoading(false);
+            return;   // bail out, user stays null
+          }
+          // --------------------
+
+          const userData: User = {
             id: payload.sub,
-            email: payload.email,
-            user_metadata: payload.user_metadata || {}
+            email,
+            user_metadata: payload.user_metadata || {},
           };
-          
-          // Store session
-          const session = {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            user: userData
-          };
-          
+
+          const session = { access_token: accessToken, refresh_token: refreshToken, user: userData };
           localStorage.setItem('auth_session', JSON.stringify(session));
           setUser(userData);
-          
-          // Clean up URL
-          window.history.replaceState({}, document.title, window.location.pathname);
+          setAuthError(null);
         } catch (error) {
           console.error('Error parsing token:', error);
         }
       }
       setLoading(false);
     } else {
-      // Check localStorage for existing session
+      // No redirect hash — check stored session
       const storedSession = localStorage.getItem('auth_session');
       if (storedSession) {
         try {
           const session = JSON.parse(storedSession);
-          setUser(session.user);
+          // Extra safety: re-validate domain on every load
+          if (session.user?.email?.endsWith(`@${ALLOWED_DOMAIN}`)) {
+            setUser(session.user);
+          } else {
+            localStorage.removeItem('auth_session');
+          }
         } catch (error) {
           console.error('Error parsing stored session:', error);
           localStorage.removeItem('auth_session');
@@ -77,17 +94,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
+    setAuthError(null);   // clear any previous error before a new attempt
     try {
       const response = await fetch(`${API_BASE_URL}/auth/google`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to initiate Google sign-in');
-      }
-      
+      if (!response.ok) throw new Error('Failed to initiate Google sign-in');
+
       const data = await response.json();
-      
       if (data.status === 'success' && data.data.url) {
-        // Redirect to Google OAuth
         window.location.href = data.data.url;
       } else {
         throw new Error('No OAuth URL received');
@@ -100,20 +113,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-      });
-      
-      localStorage.removeItem('auth_session');
-      setUser(null);
+      await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' });
     } catch (error) {
       console.error('Sign out error:', error);
-      throw error;
+    } finally {
+      localStorage.removeItem('auth_session');
+      setUser(null);
+      setAuthError(null);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, loading, authError, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );
@@ -121,8 +132,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
