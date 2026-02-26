@@ -16,15 +16,21 @@ export const initiateOAuth = async (req, res, next) => {
       });
     }
 
+    // Build redirect URL - point back to our backend callback
     const redirectUrl = `${req.protocol}://${req.get('host')}/api/auth/callback`;
     console.log('🔗 Redirect URL:', redirectUrl);
     console.log('📄 Request details - Protocol:', req.protocol, 'Host:', req.get('host'));
     
+    // Call Supabase for OAuth URL
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-        skipBrowserRedirect: true
+        skipBrowserRedirect: true,
+        queryParams: {
+          // Force Supabase to use our redirect URL
+          redirect_to: redirectUrl
+        }
       },
     });
 
@@ -144,7 +150,7 @@ export const getSession = async (req, res, next) => {
     console.log('Domain check for', email);
     if (!allowedDomains.some(d => email.endsWith(d))) {
       console.log('Domain restriction failed for', email);
-      return res.status(403).json({
+      return res.status(403).json({x
         status: 'error',
         message: 'Unauthorized domain',
         data: { user: null, session: null }
